@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { View, StyleSheet, Dimensions, ScrollView, RefreshControl } from "react-native";
+import { View, FlatList, StyleSheet, ScrollView, RefreshControl, Animated, Dimensions } from "react-native";
 import { Card, Text, ProgressBar, Chip } from "react-native-paper";
 import { PieChart, BarChart } from "react-native-chart-kit";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -7,14 +7,26 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 const SCREEN_WIDTH = Dimensions.get("window").width;
 const TASKS_STORAGE_KEY = "@tasks";
 
-export default function AnalyticsScreen() {
+const getTaskColor = (percentage) => {
+  if (percentage <= 45) return "#FF5733"; // E kuqe
+  if (percentage <= 95) return "#FFC107"; // E verdhë
+  return "#4CAF50"; // E gjelbër
+};
+
+export default function AnalyticsScreen({ navigation }) {
   const [tasks, setTasks] = useState([]);
   const [totalStudyTime, setTotalStudyTime] = useState(0);
   const [completedTasks, setCompletedTasks] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const fadeAnim = useState(new Animated.Value(0))[0];
 
   useEffect(() => {
     loadTasks();
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 600,
+      useNativeDriver: true,
+    }).start();
   }, []);
 
   const loadTasks = async () => {
@@ -48,87 +60,44 @@ export default function AnalyticsScreen() {
     loadTasks().then(() => setRefreshing(false));
   }, []);
 
-  const getCourseDistribution = () => {
-    const courseMap = {};
-
-    tasks.forEach((task) => {
-      if (!task.course) return;
-      if (!courseMap[task.course]) courseMap[task.course] = 0;
-      const estimatedTime = task.estimatedTime ? task.estimatedTime : 60;
-      courseMap[task.course] += ((task.progress / 100) * estimatedTime);
-    });
-
-    const data = Object.keys(courseMap).map((course, index) => ({
-      name: course,
-      duration: isNaN(courseMap[course]) ? 0 : courseMap[course],
-      color: generateColor(index),
-      legendFontColor: "#888",
-      legendFontSize: 14,
-    }));
-
-    return data.length > 0 ? data : [{ name: "No Data", duration: 1, color: "#ccc", legendFontColor: "#888", legendFontSize: 14 }];
-  };
-
-  const getPriorityDistribution = () => {
-    const priorityMap = { High: 0, Medium: 0, Low: 0 };
-
-    tasks.forEach((task) => {
-      if (priorityMap[task.priority] !== undefined) {
-        priorityMap[task.priority] += 1;
-      }
-    });
-
-    return {
-      labels: Object.keys(priorityMap),
-      datasets: [{ data: Object.values(priorityMap) }],
-    };
-  };
-
-  const generateColor = (index) => {
-    const colors = ["#FF6384", "#36A2EB", "#FFCE56", "#4CAF50", "#9C27B0"];
-    return colors[index % colors.length];
-  };
-
-  const sortedTasksByDeadline = tasks
-    .filter((task) => task.progress < 100)
-    .sort((a, b) => new Date(a.deadline) - new Date(b.deadline))
-    .slice(0, 3);
-
   return (
-    <ScrollView
-      contentContainerStyle={styles.container}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-    >
-      <Card style={styles.card}>
-        <Card.Content>
-          <Text style={styles.title}>📊 Study Analytics</Text>
-          <Text style={styles.statsText}>⏳ Total Study Time: {totalStudyTime} mins</Text>
-          <Text style={styles.statsText}>✅ Completed Tasks: {completedTasks} / {tasks.length}</Text>
-          <ProgressBar progress={tasks.length > 0 ? completedTasks / tasks.length : 0} style={styles.progressBar} color="#6200ee" />
-        </Card.Content>
-      </Card>
+    <ScrollView contentContainerStyle={styles.container} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
+      <Animated.View style={{ opacity: fadeAnim }}>
+        <Card style={[styles.card, styles.shadow]}>
+          <Card.Content>
+            <Text style={styles.title}>📊 Study Analytics</Text>
+            <Text style={styles.statsText}> Total Study Time: {totalStudyTime} minutes</Text>
+            <Text style={styles.statsText}> Completed Tasks: {completedTasks} / {tasks.length}</Text>
+            <ProgressBar progress={tasks.length > 0 ? completedTasks / tasks.length : 0} style={styles.progressBar} color="#6200ee" />
+          </Card.Content>
+        </Card>
+      </Animated.View>
 
       <Card style={styles.card}>
         <Card.Content>
-          <Text style={styles.title}>📚 Study Distribution by Course</Text>
-          {getCourseDistribution().length > 1 ? (
-            <PieChart
-              data={getCourseDistribution()}
-              width={SCREEN_WIDTH - 40}
-              height={220}
-              chartConfig={{
-                backgroundGradientFrom: "#fff",
-                backgroundGradientTo: "#fff",
-                color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-              }}
-              accessor="duration"
-              backgroundColor="transparent"
-              paddingLeft="15"
-              absolute
-            />
-          ) : (
-            <Text style={styles.noDataText}>No study data available.</Text>
-          )}
+          <Text style={styles.title}>📚 Study Progress</Text>
+          <PieChart
+            data={[
+              { name: "Incomplete (0-45%)", duration: tasks.filter(t => t.progress <= 45).length, color: "#FF5733", legendFontColor: "#888", legendFontSize: 10.8 },
+              { name: "In Progress (50-95%)", duration: tasks.filter(t => t.progress > 45 && t.progress < 100).length, color: "#FFC107", legendFontColor: "#888", legendFontSize: 10.2 },
+              { name: "Completed (100%)", duration: tasks.filter(t => t.progress === 100).length, color: "#4CAF50", legendFontColor: "#888", legendFontSize: 10.9 },
+            ]}
+            width={SCREEN_WIDTH - 40}
+            height={220}
+            chartConfig={{
+              backgroundGradientFrom: "#fff",
+              backgroundGradientTo: "#fff",
+              color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+              legendFontSize: 10,
+              legendFontFamily: "Arial",
+              paddingLeft: "0", // E afron legjendën më afër
+              decimalPlaces: 0,
+            }}
+            accessor="duration"
+            backgroundColor="transparent"
+            paddingLeft="-5.5"
+            absolute
+          />
         </Card.Content>
       </Card>
 
@@ -136,7 +105,10 @@ export default function AnalyticsScreen() {
         <Card.Content>
           <Text style={styles.title}>⚡ Task Priority Distribution</Text>
           <BarChart
-            data={getPriorityDistribution()}
+            data={{
+              labels: ["High", "Medium", "Low"],
+              datasets: [{ data: [tasks.filter(t => t.priority === "High").length, tasks.filter(t => t.priority === "Medium").length, tasks.filter(t => t.priority === "Low").length] }],
+            }}
             width={SCREEN_WIDTH - 40}
             height={220}
             yAxisLabel=""
@@ -149,24 +121,22 @@ export default function AnalyticsScreen() {
           />
         </Card.Content>
       </Card>
-
       <Card style={styles.card}>
         <Card.Content>
           <Text style={styles.title}>📅 Upcoming Deadlines</Text>
-          {sortedTasksByDeadline.length === 0 ? (
+          {tasks.length === 0 ? (
             <Text style={styles.noDataText}>No upcoming tasks.</Text>
           ) : (
-            sortedTasksByDeadline.map((task, index) => {
-              const deadlineDate = new Date(task.deadline);
-              const formattedDeadline = `${deadlineDate.toLocaleDateString()} - ${deadlineDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true })}`;
-              
-              return (
+            tasks
+              .filter((task) => task.progress < 100)
+              .sort((a, b) => new Date(a.deadline) - new Date(b.deadline))
+              .slice(0, 3)
+              .map((task, index) => (
                 <View key={index} style={styles.taskContainer}>
                   <Chip style={styles.taskChip} textStyle={{ color: "#FFF" }}>{task.title}</Chip>
-                  <Text style={styles.deadlineText}>📅 Due: {formattedDeadline}</Text>
+                  <Text style={styles.deadlineText}> Due: {new Date(task.deadline).toLocaleDateString()} - {new Date(task.deadline).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true })}</Text>
                 </View>
-              );
-            })
+              ))
           )}
         </Card.Content>
       </Card>
@@ -177,43 +147,51 @@ export default function AnalyticsScreen() {
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
-    padding: 15,
-    backgroundColor: "#F7F9FC",
+    padding: 10,
+    backgroundColor: "#F0F8FF",
   },
   card: {
-    padding: 15,
+    margin: 8,
+    padding: 8,
     borderRadius: 10,
-    backgroundColor: "#FFF",
-    elevation: 3,
-    marginBottom: 10,
+    backgroundColor: "#FFFFFF",
+    elevation: 4,
   },
   title: {
     textAlign: "center",
     marginBottom: 10,
     fontWeight: "bold",
     fontSize: 18,
-  },
-  statsText: {
-    fontSize: 16,
-    textAlign: "center",
-    marginBottom: 5,
+    color: "#003366",
   },
   progressBar: {
     height: 10,
-    marginVertical: 10,
+    marginVertical: 5,
     borderRadius: 5,
   },
+  shadow: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 5,
+  },
   taskContainer: {
-    marginTop: 8,
+    marginBottom: 10,
   },
   taskChip: {
-    backgroundColor: "#6200ee",
+   
     paddingVertical: 5,
   },
   deadlineText: {
     fontSize: 14,
     marginTop: 5,
-    color: "#37474F",
+   
+  },
+  noDataText: {
+    textAlign: "center",
+    fontSize: 14,
+    
   },
 });
 

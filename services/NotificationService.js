@@ -56,3 +56,22 @@ export async function scheduleTaskNotification(task) {
     });
   }
 }
+
+// Funksion për të planifikuar të gjitha njoftimet e detyrave ekzistuese
+export async function scheduleAllTaskNotifications() {
+  try {
+    const storedTasks = await AsyncStorage.getItem(STORAGE_KEY);
+    if (!storedTasks) return;
+
+    const tasks = JSON.parse(storedTasks);
+    await cancelAllNotifications();
+
+    for (const task of tasks) {
+      if (task.deadline) {
+        await scheduleTaskNotification(task);
+      }
+    }
+  } catch (error) {
+    console.error("Failed to schedule task notifications:", error);
+  }
+}
